@@ -16,10 +16,18 @@ I'm mostly just making this program for myself. As such, I'm taking the lazy app
 
 If you are running Windows with MinGW, you can run `make` in the command line and bfd will build itself with gcc. I'm using [MinGW-w64](https://sourceforge.net/projects/mingw-w64/).
 
-Otherwise, simply compile bfd.c with your favorite C compiler. It should not have any Windows specific dependancies.
+Otherwise, simply compile `bfd.c` with your favorite C compiler. It should not have any Windows specific dependancies.
 
 ### Running
 
-To run bfd, type `bfd FILE-NAME` into the command line. This will start the debugger running with the given brainfuck file.
+To run bfd, enter the following into the command line:
 
-For more information, type `bfd --help`.
+```
+bfd FILE-NAME
+```
+
+This will start the debugger running with the given brainfuck file. For more information, use the `--help` option.
+
+```
+bfd --help
+```

@@ -7,31 +7,38 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VERSION "0.0.1"
+#define VERSION "0.0.2"
 
 /* ----- GLOBAL VARIABLE DECLARATIONS ----- */
 
 #define MEM_SIZE 30000
-#define MAX_LOOPS 128
+#define MAX_LOOPS 256
+#define OUTPUT_BUF_SIZE 5000
 
 FILE *f; 	// File pointer
 
-char *mem; 	// Memory buffer
-int ind; 	// Current memory cell index
-
 char *insts; 	// Buffer that holds the program instructions
 int ip; 		// Instruction pointer
+long numInsts; 	// Number of instructions
+
+char *mem; 		// Memory buffer
+int ind; 		// Current memory cell index
+int *stack; 	// Holds memory addresses for loops
+int sCount; 	// Number of items on stack
 
 
 /* ----- FUNCTION FORWARD-DECLARATIONS ----- */
 
-void handleCmdOptions(int, char *[]);
+void handleCmdLineOptions(int, char *[]);
 void printUsage();
 
 int isValidInstruction(char);
 void handleInstruction(char);
-void stackPush(int);
+int stackPush(int);
 int stackPop();
+int stackPeek();
+
+int run();
 
 
 /* ----- MAIN ----- */
@@ -39,7 +46,7 @@ int stackPop();
 int main(int argc, char *argv[])
 {
 	// Parse command line arguments
-	handleCmdOptions(argc, argv);
+	handleCmdLineOptions(argc, argv);
 	
 	// Prints startup information filler
 	printf("bfd " VERSION "\n"
@@ -57,17 +64,18 @@ int main(int argc, char *argv[])
 	}
 	
 	// The file exists, so lets really get started!!!
-	mem = (char *) calloc(MEM_SIZE, sizeof(char));
+	mem = (char *) malloc(MEM_SIZE * sizeof(char));
+	stack = (int *) malloc(MAX_LOOPS * sizeof(int));
 	
 	// Allocate memory for instructions
-	long int fileSize;
+	long fileSize;
 	fseek(f, 0, SEEK_END); 	// Note: this isn't truly portable. I don't care.
 	fileSize = ftell(f);
 	rewind(f);
 	
 	// Dump instructions into buffer
-	insts = (char *) calloc(fileSize, sizeof(char));
-	long int numInsts = 0;
+	insts = (char *) malloc(fileSize * sizeof(char));
+	numInsts = 0;
 	while (!feof(f))
 	{
 		int c = fgetc(f);
@@ -84,14 +92,21 @@ int main(int argc, char *argv[])
 	// If there were comment characters, resize buffer to save space
 	if (numInsts < fileSize)
 	{
-		realloc(insts, numInsts);
+		insts = (char *) realloc(insts, numInsts);
 	}
 	fclose(f);
 	
-	// The code interpreting will go here...
+	// ip == -1 means program isn't running
+	ip = -1;
+	
+	run();
+	
+	// TODO: check if it actually didn't
+	printf("\nProgram exited successfully!\n");
 	
 	// Perform some cleanup and exit!
 	free(mem);
+	free(stack);
 	free(insts);
 	
 	return 0;
@@ -102,7 +117,7 @@ int main(int argc, char *argv[])
 
 // Handles options which start with '-'. Checks if any are called and exit the
 // program early if they are.
-void handleCmdOptions(int argc, char *argv[])
+void handleCmdLineOptions(int argc, char *argv[])
 {
 	if (argc != 2)
 	{
@@ -165,51 +180,134 @@ void handleInstruction(char c)
 	{
 		case '+':
 			mem[ind]++;
+			ip++;
 			break;
 		case '-':
 			mem[ind]--;
+			ip++;
 			break;
 		case '>':
 			ind++;
+			if (ind > MEM_SIZE - 1)
+			{
+				// TODO: Error
+			}
+			ip++;
 			break;
 		case '<':
 			ind--;
+			ip++;
+			// TODO: Check for error
 			break;
 		case '[':
 			if (mem[ind] == 0)
 			{
 				// Skip to matching ']'
+				int level = 1;
+				while (level != 0)
+				{
+					ip++;
+					if (ip >= numInsts)
+					{
+						// We're done with program
+						ip--; // (cuz i'm about to ++ again)
+						break;
+					}
+					if (insts[ip] == '[')
+						level++;
+					else if (insts[ip] == ']')
+						level--;
+				}
+				ip++;
 			}
 			else
 			{
-				// Push IP to stack
+				// Push value to the stack
+				if (!stackPush(ip + 1))
+				{
+					// TODO: Error
+				}
+				ip++;
 			}
 			break;
 		case ']':
 			if (mem[ind] == 0)
 			{
-				// Discard IP on stack
+				// TODO: Check for error
+				stackPop();
+				ip++;
 			}
 			else
 			{
 				// Pop IP on stack, go to it
+				ip = stackPeek();
 			}
 			break;
 		case '.':
 			putchar(mem[ind]);
+			ip++;
 			break;
 		case ',':
 			mem[ind] = getchar();
+			ip++;
 			break;
 	}
 }
 
-void stackPush(int val)
+// Pushes item onto stack. Returns if successful
+int stackPush(int val)
 {
-	val++; 	// This is only to make the compiler not complain about unused val
+	if (sCount == MAX_LOOPS)
+	{
+		// STACK IS FULL!!! OPERATION FAILED
+		return 0;
+	}
+	
+	// Not full, we gucci
+	stack[sCount] = val;
+	sCount++;
+	
+	return 1;
 }
 
+// Pops item off of stack and returns it. Returns -1 if unsuccessful
 int stackPop()
 {
-	return 0;
+	if (sCount == 0)
+	{
+		return -1;
+	}
+	
+	sCount--;
+	return stack[sCount];
+}
+
+// Returns top item on stack (without popping). Returns -1 if unsuccessful
+int stackPeek()
+{
+	if (sCount == 0)
+	{
+		return -1;
+	}
+	
+	return stack[sCount - 1];
+}
+
+// Runs the program. Returns if successful
+int run()
+{
+	// Some setup
+	ip = 0;
+	ind = 0;
+	for (int i = 0; i < MEM_SIZE; i++)
+	{
+		mem[i] = 0;
+	}
+	
+	// Actually interpret each instruction
+	while ((ip != -1) && (ip < numInsts))
+	{
+		handleInstruction(insts[ip]);
+	}
+	return 1;
 }
